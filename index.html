@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>漢検5級 よみ→漢字 手書き</title>
+  <style>
+    :root { --pad: 14px; --radius: 16px; --btnH: 52px; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f6f7f9;
+      color: #111;
+    }
+    .wrap {
+      padding: calc(env(safe-area-inset-top) + var(--pad)) var(--pad) calc(env(safe-area-inset-bottom) + var(--pad)) var(--pad);
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: 0 6px 20px rgba(0,0,0,.08);
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+    .title { font-size: 15px; opacity:.7; }
+    .counter { font-size: 13px; opacity:.7; }
+    .yomi {
+      font-size: 44px;
+      font-weight: 900;
+      letter-spacing: .02em;
+      margin: 10px 0 2px 0;
+      line-height: 1.05;
+      text-align: center;
+      word-break: keep-all;
+    }
+    .hint { font-size: 12px; opacity:.6; text-align:center; margin-bottom: 4px; }
+    .canvasWrap {
+      background: #fff;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,.12);
+    }
+    canvas {
+      width: 100%;
+      height: min(52vh, 420px);
+      display: block;
+      touch-action: none;
+      background: #fff;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    button {
+      height: var(--btnH);
+      border: 0;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 800;
+      background: #111;
+      color: #fff;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: #e9eaee;
+      color: #111;
+      font-weight: 900;
+    }
+    button:active { transform: scale(.99); }
+    .answer {
+      display: none;
+      margin-top: 12px;
+      text-align: center;
+    }
+    .answer .label { font-size: 13px; opacity: .65; margin-bottom: 4px; }
+    .answer .kanji { font-size: 104px; font-weight: 900; line-height: 1; padding: 8px 0; }
+    .footer { text-align:center; font-size:12px; opacity:.6; margin-top:10px; }
+    .pill { display:inline-block; padding: 6px 10px; border-radius: 999px; background: rgba(17,17,17,.06); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="top">
+        <div class="title">漢検5級 よみ→漢字（PDF準拠 / iPhone手書き）</div>
+        <div class="counter" id="counter">-</div>
+      </div>
+      <div class="yomi" id="yomi">読み込み中…</div>
+      <div class="hint">ひらがな を見て、下に漢字を手書き → 「答えを見る」で自己採点</div>
+    </div>
+
+    <div class="canvasWrap">
+      <canvas id="pad"></canvas>
+    </div>
+
+    <div class="row">
+      <button class="secondary" id="clearBtn">消す</button>
+      <button id="showBtn">答えを見る</button>
+    </div>
+
+    <div class="row" style="grid-template-columns: 1fr;">
+      <button class="secondary" id="nextBtn">次の問題（ランダム）</button>
+    </div>
+
+    <div class="card answer" id="answerBox">
+      <div class="label">答え（漢字）</div>
+      <div class="kanji" id="answerKanji">—</div>
+      <div class="pill" id="answerYomi">—</div>
+    </div>
+
+    <div class="footer">
+      出題数：<span id="totalCnt"></span>（※PDF内の「***」は出題しません）
+    </div>
+  </div>
+
+<script>
+  // PDFの「漢字の下にある読み」をそのまま対応づけ
+  const QUESTIONS = [{"yomi": "い", "kanji": "異"}, {"yomi": "い", "kanji": "遺"}, {"yomi": "いき", "kanji": "域"}, {"yomi": "う", "kanji": "宇"}, {"yomi": "えい", "kanji": "映"}, {"yomi": "えん", "kanji": "延"}, {"yomi": "えん", "kanji": "沿"}, {"yomi": "が", "kanji": "我"}, {"yomi": "かい", "kanji": "灰"}, {"yomi": "かく", "kanji": "拡"}, {"yomi": "かく", "kanji": "閣"}, {"yomi": "かく", "kanji": "割"}, {"yomi": "かつ", "kanji": "株"}, {"yomi": "き", "kanji": "机"}, {"yomi": "き", "kanji": "揮"}, {"yomi": "き", "kanji": "貴"}, {"yomi": "ぎ", "kanji": "疑"}, {"yomi": "きゅう", "kanji": "吸"}, {"yomi": "きょう", "kanji": "供"}, {"yomi": "きょう", "kanji": "胸"}, {"yomi": "きょう", "kanji": "郷"}, {"yomi": "きん", "kanji": "勤"}, {"yomi": "きん", "kanji": "筋"}, {"yomi": "けい", "kanji": "系"}, {"yomi": "けい", "kanji": "敬"}, {"yomi": "けい", "kanji": "警"}, {"yomi": "げき", "kanji": "劇"}, {"yomi": "げ", "kanji": "激"}, {"yomi": "げん", "kanji": "源"}, {"yomi": "こつ", "kanji": "源"}, {"yomi": "げん", "kanji": "厳"}, {"yomi": "こん", "kanji": "厳"}, {"yomi": "こ", "kanji": "呼"}, {"yomi": "みなもと", "kanji": "呼"}, {"yomi": "こ", "kanji": "誤"}, {"yomi": "きびしおのれよぶ", "kanji": "誤"}, {"yomi": "ご", "kanji": "后"}, {"yomi": "あやま", "kanji": "后"}, {"yomi": "こう", "kanji": "孝"}, {"yomi": "こう", "kanji": "皇"}, {"yomi": "こう", "kanji": "紅"}, {"yomi": "こう", "kanji": "降"}, {"yomi": "べに", "kanji": "降"}, {"yomi": "こう", "kanji": "鋼"}, {"yomi": "こう", "kanji": "刻"}, {"yomi": "り", "kanji": "刻"}, {"yomi": "こく", "kanji": "穀"}, {"yomi": "る", "kanji": "穀"}, {"yomi": "こう", "kanji": "困"}, {"yomi": "む", "kanji": "困"}, {"yomi": "さく", "kanji": "策"}, {"yomi": "じ", "kanji": "策"}, {"yomi": "さつ", "kanji": "冊"}, {"yomi": "さん", "kanji": "蚕"}, {"yomi": "し", "kanji": "私"}, {"yomi": "かいこ", "kanji": "私"}, {"yomi": "し", "kanji": "姿"}, {"yomi": "いた", "kanji": "姿"}, {"yomi": "し", "kanji": "視"}, {"yomi": "わたし", "kanji": "視"}, {"yomi": "し", "kanji": "詞"}, {"yomi": "すがた", "kanji": "詞"}, {"yomi": "し", "kanji": "誌"}, {"yomi": "し", "kanji": "磁"}, {"yomi": "じ", "kanji": "射"}, {"yomi": "しゃ", "kanji": "捨"}, {"yomi": "しゃ", "kanji": "尺"}, {"yomi": "しゃく", "kanji": "若"}, {"yomi": "じゃく", "kanji": "樹"}, {"yomi": "る", "kanji": "樹"}, {"yomi": "じゅう", "kanji": "従"}, {"yomi": "したが", "kanji": "従"}, {"yomi": "じゅう", "kanji": "縦"}, {"yomi": "たて", "kanji": "縦"}, {"yomi": "しゅく", "kanji": "縮"}, {"yomi": "じゅく", "kanji": "熟"}, {"yomi": "じゅん", "kanji": "純"}, {"yomi": "しょ", "kanji": "処"}, {"yomi": "しょ", "kanji": "署"}, {"yomi": "しょ", "kanji": "諸"}, {"yomi": "じょ", "kanji": "除"}, {"yomi": "のぞ", "kanji": "除"}, {"yomi": "しょう", "kanji": "将"}, {"yomi": "しょう", "kanji": "傷"}, {"yomi": "きず", "kanji": "傷"}, {"yomi": "しょう", "kanji": "障"}, {"yomi": "じょう", "kanji": "城"}, {"yomi": "しろ", "kanji": "城"}, {"yomi": "じょう", "kanji": "蒸"}, {"yomi": "しん", "kanji": "針"}, {"yomi": "は", "kanji": "針"}, {"yomi": "せい", "kanji": "盛"}, {"yomi": "せい", "kanji": "聖"}, {"yomi": "せい", "kanji": "誠"}, {"yomi": "せい", "kanji": "宣"}, {"yomi": "せん", "kanji": "専"}, {"yomi": "せん", "kanji": "泉"}, {"yomi": "せん", "kanji": "洗"}, {"yomi": "せん", "kanji": "染"}, {"yomi": "ぜん", "kanji": "善"}, {"yomi": "そう", "kanji": "奏"}, {"yomi": "そう", "kanji": "窓"}, {"yomi": "そう", "kanji": "創"}, {"yomi": "そう", "kanji": "装"}, {"yomi": "そう", "kanji": "層"}, {"yomi": "そ", "kanji": "操"}, {"yomi": "たく", "kanji": "宅"}, {"yomi": "たん", "kanji": "担"}, {"yomi": "にな", "kanji": "担"}, {"yomi": "たん", "kanji": "探"}, {"yomi": "さが", "kanji": "探"}, {"yomi": "たん", "kanji": "誕"}, {"yomi": "だん", "kanji": "段"}, {"yomi": "だん", "kanji": "暖"}, {"yomi": "ち", "kanji": "値"}, {"yomi": "ね", "kanji": "値"}, {"yomi": "ちゅう", "kanji": "宙"}, {"yomi": "ちゅう", "kanji": "忠"}, {"yomi": "ちょ", "kanji": "著"}, {"yomi": "ちょう", "kanji": "庁"}, {"yomi": "ちょう", "kanji": "頂"}, {"yomi": "いただき", "kanji": "頂"}, {"yomi": "ちょう", "kanji": "潮"}, {"yomi": "しお", "kanji": "潮"}, {"yomi": "ちん", "kanji": "賃"}, {"yomi": "つ", "kanji": "痛"}, {"yomi": "いた", "kanji": "痛"}, {"yomi": "とど", "kanji": "届"}, {"yomi": "なん", "kanji": "難"}, {"yomi": "にゅう", "kanji": "乳"}, {"yomi": "にん", "kanji": "認"}, {"yomi": "のう", "kanji": "納"}, {"yomi": "のう", "kanji": "脳"}, {"yomi": "は", "kanji": "派"}, {"yomi": "はい", "kanji": "拝"}, {"yomi": "はい", "kanji": "背"}, {"yomi": "はい", "kanji": "肺"}, {"yomi": "はい", "kanji": "俳"}, {"yomi": "はん", "kanji": "班"}, {"yomi": "ばん", "kanji": "晩"}, {"yomi": "ひ", "kanji": "否"}, {"yomi": "ひ", "kanji": "批"}, {"yomi": "へい", "kanji": "陛"}, {"yomi": "へい", "kanji": "閉"}, {"yomi": "へん", "kanji": "補"}, {"yomi": "ほ", "kanji": "暮"}, {"yomi": "ぼ", "kanji": "宝"}, {"yomi": "ほう", "kanji": "訪"}, {"yomi": "ほう", "kanji": "亡"}, {"yomi": "ぼう", "kanji": "忘"}, {"yomi": "ぼう", "kanji": "棒"}, {"yomi": "ぼう", "kanji": "枚"}, {"yomi": "まい", "kanji": "幕"}, {"yomi": "まく", "kanji": "密"}, {"yomi": "みつ", "kanji": "盟"}, {"yomi": "めい", "kanji": "模"}, {"yomi": "よく", "kanji": "欲"}, {"yomi": "よく", "kanji": "翌"}, {"yomi": "らん", "kanji": "乱"}, {"yomi": "らん", "kanji": "卵"}, {"yomi": "らん", "kanji": "覧"}, {"yomi": "り", "kanji": "裏"}, {"yomi": "りつ", "kanji": "律"}, {"yomi": "りん", "kanji": "臨"}, {"yomi": "ろう", "kanji": "朗"}, {"yomi": "ろん", "kanji": "論"}];
+
+  let deck = [];
+  let idx = 0;
+  let current = null;
+
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function resetDeck() {
+    deck = shuffle(QUESTIONS.map((q, i) => i));
+    idx = 0;
+  }
+
+  function setQuestion(q) {
+    current = q;
+    document.getElementById("yomi").textContent = q.yomi;
+    document.getElementById("answerKanji").textContent = q.kanji;
+    document.getElementById("answerYomi").textContent = q.yomi;
+    document.getElementById("answerBox").style.display = "none";
+    clearCanvas();
+    updateCounter();
+  }
+
+  function updateCounter() {
+    const remain = deck.length - idx;
+    document.getElementById("counter").textContent = "残り " + remain + " / " + deck.length;
+  }
+
+  function nextQuestion() {
+    if (!deck.length || idx >= deck.length) resetDeck();
+    const q = QUESTIONS[deck[idx++]];
+    setQuestion(q);
+  }
+
+  const canvas = document.getElementById("pad");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  function resizeCanvas() {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 10;
+  }
+
+  let drawing = false;
+  let lastX = 0, lastY = 0;
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    drawing = true;
+    const p = getPos(e);
+    lastX = p.x; lastY = p.y;
+  }
+
+  function moveDraw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastX = p.x; lastY = p.y;
+  }
+
+  function endDraw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    drawing = false;
+  }
+
+  function clearCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
+  }
+
+  document.getElementById("clearBtn").addEventListener("click", clearCanvas);
+  document.getElementById("showBtn").addEventListener("click", () => {
+    const box = document.getElementById("answerBox");
+    box.style.display = (box.style.display === "none" || !box.style.display) ? "block" : "none";
+  });
+  document.getElementById("nextBtn").addEventListener("click", nextQuestion);
+
+  canvas.addEventListener("touchstart", startDraw, { passive: false });
+  canvas.addEventListener("touchmove", moveDraw, { passive: false });
+  canvas.addEventListener("touchend", endDraw, { passive: false });
+  canvas.addEventListener("touchcancel", endDraw, { passive: false });
+
+  // PCでも一応動く
+  canvas.addEventListener("mousedown", startDraw);
+  canvas.addEventListener("mousemove", moveDraw);
+  window.addEventListener("mouseup", endDraw);
+
+  window.addEventListener("resize", () => {
+    resizeCanvas();
+    clearCanvas();
+  });
+
+  document.getElementById("totalCnt").textContent = QUESTIONS.length;
+
+  resetDeck();
+  resizeCanvas();
+  nextQuestion();
+</script>
+</body>
+</html>
